@@ -3,6 +3,9 @@ import 'package:flash_chat/constants.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+final _fireStore = FirebaseFirestore.instance;
+User? loggedInuser;
+
 class ChatScreen extends StatefulWidget {
   static const String id = 'chat_Screen';
 
@@ -11,9 +14,8 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  final _fireStore = FirebaseFirestore.instance;
+  final messageTextController = TextEditingController();
   final _auth = FirebaseAuth.instance;
-  User? loggedInuser;
   String? messageText;
 
   @override
@@ -33,20 +35,6 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // void getMessages() async {
-  //   final messages = await _fireStore.collection('messages').get();
-  //   for(var message in messages.docs){
-  //     print(message.data());
-  //   }
-  // }
-
-  void messageStream() async {
-   await for( var snapshot in _fireStore.collection('messages').snapshots()){
-     for(var message in snapshot.docs){
-            print(message.data());
-         }
-   }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,9 +45,8 @@ class _ChatScreenState extends State<ChatScreen> {
           IconButton(
               icon: Icon(Icons.close),
               onPressed: () {
-                // _auth.signOut();
-                // Navigator.pop(context);
-               messageStream();
+                _auth.signOut();
+                Navigator.pop(context);
               }),
         ],
         title: Text('⚡️Chat'),
@@ -70,20 +57,7 @@ class _ChatScreenState extends State<ChatScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            StreamBuilder<QuerySnapshot>(
-              stream: _fireStore.collection('messages').snapshots(),
-              builder: (context, snapshot){
-                if(snapshot.hasData){
-                  final messages = snapshot.data?.docs;
-                  List<Text> messageWidgets = [];
-                  for(var message in messages!) {
-                    final messageText = (message.data as Map<String, dynamic>)['text'];
-                  final messageSender = (message.data as Map<String, dynamic>)['sender'];
-                  final messageWidget = Text('$messageText from $messageSender');
-                  }
-                }
-              },
-            ),
+            MessagesStream(),
             Container(
               decoration: kMessageContainerDecoration,
               child: Row(
@@ -91,6 +65,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 children: <Widget>[
                   Expanded(
                     child: TextField(
+                      controller: messageTextController,
                       onChanged: (value) {
                         messageText = value;
                       },
@@ -99,6 +74,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                   TextButton(
                     onPressed: () {
+                      messageTextController.clear();
                       _fireStore.collection('messages').add({
                         'text': messageText,
                         'sender': loggedInuser?.email,
@@ -114,6 +90,88 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class MessagesStream extends StatelessWidget {
+  const MessagesStream({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _fireStore.collection('messages').snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return Center(
+            child: CircularProgressIndicator(
+              backgroundColor: Colors.lightBlueAccent,
+            ),
+          );
+        }
+        final messages = snapshot.data?.docs.reversed;
+        List<MessageBubble> messageBubbles = [];
+        for (var message in messages!) {
+          final messageText = message.get('text');
+          final messageSender = message.get('sender');
+          final currentUser = loggedInuser?.email;
+          final messageBubble = MessageBubble(
+            text: messageText,
+            sender: messageSender,
+            isMe: currentUser == messageSender,
+          );
+          messageBubbles.add(messageBubble);
+        }
+        return Expanded(
+          child: ListView(
+            reverse: true,
+            padding: EdgeInsets.symmetric(horizontal: 10.0, vertical: 20.0),
+            children: messageBubbles,
+          ),
+        );
+        return Container();
+      },
+    );
+  }
+}
+
+class MessageBubble extends StatelessWidget {
+  MessageBubble({this.text, this.sender, this.isMe});
+  final String? text;
+  final String? sender;
+  final bool? isMe;
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.all(10.0),
+      child: Column(
+        crossAxisAlignment:
+            isMe! ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          Text(
+            sender!,
+            style: TextStyle(color: Colors.black54, fontSize: 12.0),
+          ),
+          Material(
+              borderRadius: BorderRadius.only(
+                topLeft: isMe! ? Radius.circular(30.0) : Radius.circular(0.0),
+                topRight: isMe! ? Radius.circular(0.0) : Radius.circular(30.0),
+                bottomLeft: Radius.circular(30.0),
+                bottomRight: Radius.circular(30.0),
+              ),
+              elevation: 5.0,
+              color: isMe! ? Colors.lightBlueAccent : Colors.white,
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 10.0, horizontal: 20.0),
+                child: Text(
+                  text!,
+                  style: TextStyle(
+                      fontSize: 15.0,
+                      color: isMe! ? Colors.white : Colors.black54),
+                ),
+              )),
+        ],
       ),
     );
   }
